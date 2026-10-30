@@ -1,1 +1,14 @@
 
+{% extends "base.html" %}{% block body %}
+<div class="card"><h2>All Car Bookings</h2>
+<p><small>Click a booking number to open it. After the customer brings the car in and it is repaired, record the work, parts and labour there.</small></p>
+<table>
+<tr><th>#</th><th>Customer</th><th>Plate / Car</th><th>Service</th><th>Date</th><th>Notes</th><th>Status</th><th>Action</th></tr>
+{% for b in bookings %}<tr><td><a href="/admin/booking/{{ b.id }}">#{{ b.id }}</a></td><td>{{ b.customer }}</td><td>{{ b.plate }}<br><small>{{ b.model }}</small></td>
+<td>{{ b.service }}</td><td>{{ b.date }}</td><td>{{ b.notes }}</td><td><span class="tag {{ b.status }}">{{ b.status }}</span></td>
+<td>{% if b.status=='Pending' %}
+<form class="inline" method="post" action="/admin/booking/{{ b.id }}/approve"><button class="g">Approve</button></form>
+<form class="inline" method="post" action="/admin/booking/{{ b.id }}/reject"><button class="r">Reject</button></form>
+{% elif b.status=='Approved' %}<a href="/admin/booking/{{ b.id }}">Record repair</a>
+{% elif b.status=='Completed' %}<a href="/admin/booking/{{ b.id }}">View record</a>{% endif %}</td></tr>
+{% else %}<tr><td colspan="8">No bookings.</td></tr>{% endfor %}</table></div>{% endblock %}
