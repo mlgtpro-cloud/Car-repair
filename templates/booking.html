@@ -1,0 +1,41 @@
+{% extends "base.html" %}{% block body %}
+<p><a href="/admin">&larr; Back to bookings</a></p>
+<div class="card"><h2>Booking #{{ b.id }} <span class="tag {{ b.status }}">{{ b.status }}</span></h2>
+<table>
+<tr><th>Customer</th><td>{{ b.customer }}</td></tr>
+<tr><th>Plate</th><td>{{ b.plate }}</td></tr>
+<tr><th>Car</th><td>{{ b.model }}</td></tr>
+<tr><th>Service</th><td>{{ b.service }}</td></tr>
+<tr><th>Date</th><td>{{ b.date }}</td></tr>
+<tr><th>Notes</th><td>{{ b.notes }}</td></tr>
+</table>
+{% if b.status=='Pending' %}
+<p>
+<form class="inline" method="post" action="/admin/booking/{{ b.id }}/approve"><button class="g">Approve</button></form>
+<form class="inline" method="post" action="/admin/booking/{{ b.id }}/reject"><button class="r">Reject</button></form></p>
+{% endif %}</div>
+
+{% if b.status=='Approved' %}
+<div class="card"><h2>Repair Record</h2>
+<p><small>Fill this in after the customer has brought the car in and the technician has finished the repair.</small></p>
+<form method="post" action="/admin/booking/{{ b.id }}/complete" oninput="calc(this)" onchange="calc(this)">
+<label><b>Work done (what the technician changed / repaired)</b></label>
+<textarea name="work_done" rows="3" required></textarea>
+<label><b>Part used</b></label>
+<select name="part_id"><option value="" data-price="0">No part used</option>{% for p in parts %}<option value="{{ p.id }}" data-price="{{ p.price }}">{{ p.name }} - RM{{ '%.2f'|format(p.price) }} (stock {{ p.stock }})</option>{% endfor %}</select>
+<label><b>Part quantity</b></label>
+<input name="qty" type="number" min="0" value="0">
+<label><b>Labour fee (RM)</b></label>
+<input name="labour" type="number" step="0.01" min="0" value="0">
+<label><b>Total (RM) = part x qty + labour</b></label>
+<input name="total" readonly>
+<br><br><button class="g">Save &amp; Complete</button></form></div>
+<script>function calc(f){var o=f.part_id.selectedOptions[0];var p=parseFloat(o.dataset.price||0),q=parseFloat(f.qty.value||0),l=parseFloat(f.labour.value||0);f.total.value="RM "+(p*q+l).toFixed(2);}</script>
+{% elif b.status=='Completed' and rec %}
+<div class="card"><h2>Repair Record</h2><table>
+<tr><th>Completed on</th><td>{{ rec.done_on[:10] }}</td></tr>
+<tr><th>Work done</th><td>{{ rec.work_done }}</td></tr>
+<tr><th>Part used</th><td>{% if rec.part %}{{ rec.part }} x{{ rec.qty }}{% else %}-{% endif %}</td></tr>
+<tr><th>Total cost</th><td>RM {{ '%.2f'|format(rec.cost) }}</td></tr>
+</table></div>
+{% endif %}{% endblock %}
