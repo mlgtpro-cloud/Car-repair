@@ -17,7 +17,7 @@ button.g{background:#16a34a}button.r{background:#dc2626}
 form.inline{display:inline}
 </style></head><body>
 <nav><b>🔧 AutoCare Garage</b>
-{% if session.role=='admin' %}<a href="/admin">Bookings</a><a href="/admin/records">Service Records</a><a href="/admin/inventory">Inventory</a><a href="/admin/reports">Reports</a>
+{% if session.role=='admin' %}<a href="/admin">Bookings</a><a href="/admin/records">Service Records</a><a href="/admin/inventory">Inventory</a><a href="/admin/suppliers">Suppliers</a><a href="/admin/reports">Reports</a>
 {% elif session.role=='customer' %}<a href="/my">My Bookings</a>{% endif %}
 <span class="sp"></span>
 {% if session.role %}<span>{{ session.name }}</span><a href="/logout">Logout</a>{% else %}<a href="/login">Login</a><a href="/register">Register</a>{% endif %}
