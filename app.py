@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY, name TEXT, username TEX
 CREATE TABLE IF NOT EXISTS bookings(id INTEGER PRIMARY KEY, user_id INTEGER, plate TEXT, model TEXT, service TEXT, date TEXT, notes TEXT, status TEXT DEFAULT 'Pending');
 CREATE TABLE IF NOT EXISTS records(id INTEGER PRIMARY KEY, booking_id INTEGER, work_done TEXT, part_id INTEGER, qty INTEGER, cost REAL, done_on TEXT DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS parts(id INTEGER PRIMARY KEY, name TEXT UNIQUE, stock INTEGER, reorder_level INTEGER, price REAL);
+CREATE TABLE IF NOT EXISTS suppliers(id INTEGER PRIMARY KEY, name TEXT UNIQUE, phone TEXT);
 CREATE TABLE IF NOT EXISTS orders(id INTEGER PRIMARY KEY, part_id INTEGER, qty INTEGER, supplier TEXT, unit_cost REAL DEFAULT 0, status TEXT DEFAULT 'Ordered', ordered_on TEXT DEFAULT CURRENT_TIMESTAMP);
 """
 SERVICES = ["Oil Change", "Brake Service", "Tyre Replacement", "Battery Replacement", "Aircond Service", "General Inspection"]
@@ -94,6 +95,9 @@ def init_db():
                   (generate_password_hash("admin123"),))
         c.executemany("INSERT INTO parts(name,stock,reorder_level,price) VALUES(?,?,?,?)",
                       [("Engine Oil 4L", 20, 5, 85), ("Brake Pad Set", 8, 4, 120), ("Oil Filter", 3, 5, 25), ("Car Battery", 6, 3, 280)])
+    if not c.execute("SELECT 1 FROM suppliers").fetchone():
+        c.executemany("INSERT INTO suppliers(name,phone) VALUES(?,?)",
+                      [("Hoklol Auto", "012-000 0001"), ("AutoParts KL", "012-000 0002"), ("Amaron Supplier", "012-000 0003")])
     seed_demo(c)
     c.commit(); c.close()
 
@@ -293,7 +297,8 @@ def reports():
 def inventory():
     parts = db().execute("SELECT * FROM parts ORDER BY name").fetchall()
     orders = db().execute("SELECT o.*, p.name FROM orders o JOIN parts p ON p.id=o.part_id ORDER BY o.id DESC").fetchall()
-    return render_template("inventory.html", parts=parts, orders=orders)
+    suppliers = db().execute("SELECT * FROM suppliers ORDER BY name").fetchall()
+    return render_template("inventory.html", parts=parts, orders=orders, suppliers=suppliers)
 
 @app.post("/admin/inventory/add")
 @login_required("admin")
@@ -306,6 +311,46 @@ def add_part():
     except sqlite3.IntegrityError:
         flash("Part already exists.")
     return redirect(url_for("inventory"))
+
+# ---------- Admin: suppliers ----------
+@app.route("/admin/suppliers")
+@login_required("admin")
+def suppliers():
+    rows = db().execute("SELECT * FROM suppliers ORDER BY name").fetchall()
+    return render_template("suppliers.html", suppliers=rows)
+
+@app.post("/admin/suppliers/add")
+@login_required("admin")
+def add_supplier():
+    name = request.form["name"].strip()
+    if name:
+        try:
+            db().execute("INSERT INTO suppliers(name,phone) VALUES(?,?)", (name, request.form.get("phone", "").strip()))
+            db().commit(); flash("Supplier added.")
+        except sqlite3.IntegrityError:
+            flash("Supplier already exists.")
+    return redirect(url_for("suppliers"))
+
+@app.post("/admin/suppliers/<int:i>/edit")
+@login_required("admin")
+def edit_supplier(i):
+    name = request.form["name"].strip()
+    old = db().execute("SELECT name FROM suppliers WHERE id=?", (i,)).fetchone()
+    if old and name:
+        try:
+            db().execute("UPDATE suppliers SET name=?, phone=? WHERE id=?", (name, request.form.get("phone", "").strip(), i))
+            db().execute("UPDATE orders SET supplier=? WHERE supplier=?", (name, old["name"]))
+            db().commit(); flash("Supplier updated.")
+        except sqlite3.IntegrityError:
+            flash("Another supplier already has that name.")
+    return redirect(url_for("suppliers"))
+
+@app.post("/admin/suppliers/<int:i>/delete")
+@login_required("admin")
+def delete_supplier(i):
+    db().execute("DELETE FROM suppliers WHERE id=?", (i,)); db().commit()
+    flash("Supplier deleted.")
+    return redirect(url_for("suppliers"))
 
 @app.post("/admin/order")
 @login_required("admin")
