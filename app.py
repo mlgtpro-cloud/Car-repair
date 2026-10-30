@@ -1,4 +1,5 @@
 import sqlite3
+from datetime import datetime, timedelta
 from functools import wraps
 from flask import Flask, render_template, request, redirect, url_for, session, flash, g
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -16,6 +17,53 @@ CREATE TABLE IF NOT EXISTS orders(id INTEGER PRIMARY KEY, part_id INTEGER, qty I
 """
 SERVICES = ["Oil Change", "Brake Service", "Tyre Replacement", "Battery Replacement", "Aircond Service", "General Inspection"]
 
+def seed_demo(c):
+    """Demo customers, bookings, repair records and part orders so the reports are never empty."""
+    if c.execute("SELECT 1 FROM users WHERE username='user123'").fetchone():
+        return
+    pw = generate_password_hash("password123")
+    uid = {}
+    for name, uname in [("Demo User", "user123"), ("Ahmad Faiz", "faiz"), ("Siti Aminah", "siti"), ("Tan Wei Ming", "weiming")]:
+        uid[uname] = c.execute("INSERT INTO users(name,username,password) VALUES(?,?,?)", (name, uname, pw)).lastrowid
+    parts = {r[1]: (r[0], r[2]) for r in c.execute("SELECT id,name,price FROM parts")}
+    today = datetime.utcnow() + timedelta(hours=8)
+    day = lambda n: (today - timedelta(days=n)).strftime("%Y-%m-%d")
+    # (user, plate, car, service, days ago, status, work done, part, qty, labour)
+    demo = [
+        ("user123", "WXY 1234", "Perodua Myvi", "Oil Change", 13, "Completed", "Changed engine oil and oil filter", "Engine Oil 4L", 1, 40),
+        ("faiz", "VDE 5521", "Proton Saga", "Brake Service", 12, "Completed", "Replaced front brake pads", "Brake Pad Set", 1, 80),
+        ("siti", "PQR 8890", "Honda City", "Oil Change", 11, "Completed", "Changed engine oil", "Engine Oil 4L", 1, 40),
+        ("weiming", "JKL 3302", "Toyota Vios", "Battery Replacement", 10, "Completed", "Replaced car battery", "Car Battery", 1, 30),
+        ("user123", "WXY 1234", "Perodua Myvi", "General Inspection", 9, "Completed", "Full inspection, no major issues", None, 0, 60),
+        ("faiz", "VDE 5521", "Proton Saga", "Oil Change", 8, "Completed", "Changed oil filter and topped up oil", "Oil Filter", 1, 40),
+        ("user123", "WXY 1234", "Perodua Myvi", "Oil Change", 7, "Completed", "Changed engine oil", "Engine Oil 4L", 1, 40),
+        ("siti", "PQR 8890", "Honda City", "Brake Service", 6, "Completed", "Replaced rear brake pads", "Brake Pad Set", 1, 80),
+        ("weiming", "JKL 3302", "Toyota Vios", "Aircond Service", 5, "Completed", "Aircond cleaning and gas top-up", None, 0, 180),
+        ("faiz", "BMA 7712", "Mazda CX-5", "Oil Change", 4, "Completed", "Changed engine oil (2 units)", "Engine Oil 4L", 2, 50),
+        ("faiz", "VDE 5521", "Proton Saga", "Tyre Replacement", 4, "Completed", "Replaced 2 tyres and alignment", None, 0, 380),
+        ("weiming", "JKL 3302", "Toyota Corolla Cross", "Brake Service", 3, "Completed", "Replaced front brake pads", "Brake Pad Set", 1, 90),
+        ("siti", "PQR 8890", "Honda City", "Battery Replacement", 2, "Completed", "Replaced car battery", "Car Battery", 1, 30),
+        ("siti", "PQR 8890", "Honda City", "Oil Change", 1, "Completed", "Changed oil filter", "Oil Filter", 1, 40),
+        ("user123", "WXY 1234", "Perodua Myvi", "Aircond Service", 0, "Approved", None, None, 0, 0),
+        ("faiz", "BMA 7712", "Mazda CX-5", "Brake Service", -1, "Pending", None, None, 0, 0),
+        ("weiming", "JKL 3302", "Toyota Vios", "Oil Change", -2, "Pending", None, None, 0, 0),
+        ("siti", "ABC 9001", "Proton X50", "General Inspection", -3, "Rejected", None, None, 0, 0),
+    ]
+    for u, plate, car, svc, ago, status, work, part, qty, labour in demo:
+        bid = c.execute("INSERT INTO bookings(user_id,plate,model,service,date,notes,status) VALUES(?,?,?,?,?,?,?)",
+                        (uid[u], plate, car, svc, day(ago), "", status)).lastrowid
+        if status == "Completed":
+            pid, price = parts[part] if part else (None, 0)
+            c.execute("INSERT INTO records(booking_id,work_done,part_id,qty,cost,done_on) VALUES(?,?,?,?,?,?)",
+                      (bid, work, pid, qty, price * qty + labour, day(ago) + " 04:00:00"))
+    # (part, qty, supplier, unit cost, days ago)
+    for part, qty, sup, cost, ago in [("Engine Oil 4L", 10, "Hoklol Auto", 70, 12), ("Brake Pad Set", 5, "AutoParts KL", 95, 9),
+                                      ("Oil Filter", 10, "Hoklol Auto", 18, 6), ("Car Battery", 2, "Amaron Supplier", 220, 3)]:
+        c.execute("INSERT INTO orders(part_id,qty,supplier,unit_cost,status,ordered_on) VALUES(?,?,?,?,'Received',?)",
+                  (parts[part][0], qty, sup, cost, day(ago) + " 04:00:00"))
+    for name, stock in [("Engine Oil 4L", 18), ("Brake Pad Set", 6), ("Oil Filter", 4), ("Car Battery", 4)]:
+        c.execute("UPDATE parts SET stock=? WHERE name=?", (stock, name))
+
 def init_db():
     c = sqlite3.connect(DB)
     c.executescript(SCHEMA)
@@ -28,6 +76,7 @@ def init_db():
                   (generate_password_hash("admin123"),))
         c.executemany("INSERT INTO parts(name,stock,reorder_level,price) VALUES(?,?,?,?)",
                       [("Engine Oil 4L", 20, 5, 85), ("Brake Pad Set", 8, 4, 120), ("Oil Filter", 3, 5, 25), ("Car Battery", 6, 3, 280)])
+    seed_demo(c)
     c.commit(); c.close()
 
 def db():
