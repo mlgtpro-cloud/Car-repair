@@ -7,9 +7,10 @@
 <input name="name" placeholder="Part name" required><input name="stock" type="number" placeholder="Stock" required>
 <input name="reorder_level" type="number" placeholder="Reorder level" required><input name="price" type="number" step="0.01" placeholder="Price" required>
 <button>Add</button></div></form></div>
-<div class="card"><h2>Submit Part Order</h2><form method="post" action="/admin/order"><div class="row">
+<div class="card"><h2>Submit Part Order</h2>
+<p><small>Supplier not in the list? <a href="/admin/suppliers">Manage suppliers</a></small></p><form method="post" action="/admin/order"><div class="row">
 <select name="part_id">{% for p in parts %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}</select>
-<input name="qty" type="number" min="1" placeholder="Quantity" required><input name="unit_cost" type="number" step="0.01" min="0" placeholder="Cost per unit (RM)" required><input name="supplier" placeholder="Supplier" required>
+<input name="qty" type="number" min="1" placeholder="Quantity" required><input name="unit_cost" type="number" step="0.01" min="0" placeholder="Cost per unit (RM)" required><select name="supplier" required><option value="" disabled selected>Select supplier</option>{% for s in suppliers %}<option>{{ s.name }}</option>{% endfor %}</select>
 <button>Submit Order</button></div></form>
 <h3>Order History</h3><table><tr><th>#</th><th>Part</th><th>Qty</th><th>Unit cost</th><th>Total (RM)</th><th>Supplier</th><th>Date</th><th>Status</th><th></th></tr>
 {% for o in orders %}<tr><td>{{ o.id }}</td><td>{{ o.name }}</td><td>{{ o.qty }}</td><td>{{ '%.2f'|format(o.unit_cost or 0) }}</td><td>{{ '%.2f'|format(o.qty*(o.unit_cost or 0)) }}</td><td>{{ o.supplier }}</td><td>{{ o.ordered_on[:10] }}</td>
