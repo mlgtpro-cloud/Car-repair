@@ -1,1 +1,52 @@
 
+{% extends "base.html" %}{% block body %}
+<div class="card"><h2>Book a Service</h2>
+<form method="post"><div class="row">
+<input name="plate" placeholder="Plate no." required>
+<select id="carMake" onchange="updateModels()" required>
+<option value="" selected disabled>Select make</option>
+</select>
+<select id="carModel" name="model" disabled required>
+<option value="" selected disabled>Select model</option>
+</select>
+<select name="service">{% for s in services %}<option>{{ s }}</option>{% endfor %}</select>
+<input name="date" type="date" required></div>
+<textarea name="notes" placeholder="Notes (optional)"></textarea><button>Submit Reservation</button></form></div>
+
+<div class="card"><h2>My Reservations</h2><table>
+<tr><th>#</th><th>Plate</th><th>Car</th><th>Service</th><th>Date</th><th>Status</th></tr>
+{% for b in bookings %}<tr><td>{{ b.id }}</td><td>{{ b.plate }}</td><td>{{ b.model }}</td><td>{{ b.service }}</td><td>{{ b.date }}</td>
+<td><span class="tag {{ b.status }}">{{ b.status }}</span></td></tr>
+{% else %}<tr><td colspan="6">No reservations yet.</td></tr>{% endfor %}</table></div>
+
+<script>
+const carData = {
+  Perodua: ["Axia","Bezza","Myvi","Alza","Aruz","Ativa","Viva"],
+  Proton: ["Saga","Persona","Iriz","Exora","X50","X70","X90","S70","Preve","Waja","Wira"],
+  Toyota: ["Vios","Yaris","Corolla","Corolla Cross","Camry","Avanza","Veloz","Innova","Rush","Hilux","Fortuner","Harrier","Alphard","Vellfire"],
+  Honda: ["City","Civic","Accord","Jazz","HR-V","CR-V","WR-V","BR-V"],
+  Mazda: ["Mazda 2","Mazda 3","CX-3","CX-30","CX-5","CX-8","CX-60"],
+  Nissan: ["Almera","Serena","X-Trail","Navara"],
+  Mitsubishi: ["Triton","Xpander","ASX","Outlander"],
+  Chery: ["Omoda 5","Tiggo 8 Pro"],
+  Jaecoo: ["J7"],
+  Other: ["Other (state in notes)"]
+};
+const makeSel = document.getElementById("carMake");
+Object.keys(carData).forEach(function (m) {
+  const o = document.createElement("option"); o.value = m; o.textContent = m; makeSel.appendChild(o);
+});
+function updateModels() {
+  const make = makeSel.value;
+  const m = document.getElementById("carModel");
+  m.innerHTML = '<option value="" selected disabled>Select model</option>';
+  m.disabled = !carData[make];
+  (carData[make] || []).forEach(function (x) {
+    const o = document.createElement("option");
+    o.value = make + " " + x;
+    o.textContent = x;
+    m.appendChild(o);
+  });
+}
+</script>
+{% endblock %}
