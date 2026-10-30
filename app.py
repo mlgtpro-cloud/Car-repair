@@ -1,4 +1,4 @@
-import sqlite3
+import sqlite3, random, calendar
 from datetime import datetime, timedelta
 from functools import wraps
 from flask import Flask, render_template, request, redirect, url_for, session, flash, g
@@ -17,8 +17,14 @@ CREATE TABLE IF NOT EXISTS orders(id INTEGER PRIMARY KEY, part_id INTEGER, qty I
 """
 SERVICES = ["Oil Change", "Brake Service", "Tyre Replacement", "Battery Replacement", "Aircond Service", "General Inspection"]
 
+def month_back(now, k):
+    y, m = now.year, now.month - k
+    while m <= 0:
+        m += 12; y -= 1
+    return y, m
+
 def seed_demo(c):
-    """Demo customers, bookings, repair records and part orders so the reports are never empty."""
+    """Demo customers, bookings, repair records and part orders spread over ~13 months so reports look real."""
     if c.execute("SELECT 1 FROM users WHERE username='user123'").fetchone():
         return
     pw = generate_password_hash("password123")
@@ -26,10 +32,53 @@ def seed_demo(c):
     for name, uname in [("Demo User", "user123"), ("Ahmad Faiz", "faiz"), ("Siti Aminah", "siti"), ("Tan Wei Ming", "weiming")]:
         uid[uname] = c.execute("INSERT INTO users(name,username,password) VALUES(?,?,?)", (name, uname, pw)).lastrowid
     parts = {r[1]: (r[0], r[2]) for r in c.execute("SELECT id,name,price FROM parts")}
-    today = datetime.utcnow() + timedelta(hours=8)
-    day = lambda n: (today - timedelta(days=n)).strftime("%Y-%m-%d")
-    # (user, plate, car, service, days ago, status, work done, part, qty, labour)
-    demo = [
+    now = datetime.utcnow() + timedelta(hours=8)
+    day = lambda n: (now - timedelta(days=n)).strftime("%Y-%m-%d")
+
+    def add(owner, plate, car, svc, date, status, work=None, part=None, qty=0, labour=0):
+        bid = c.execute("INSERT INTO bookings(user_id,plate,model,service,date,notes,status) VALUES(?,?,?,?,?,?,?)",
+                        (uid[owner], plate, car, svc, date, "", status)).lastrowid
+        if status == "Completed":
+            pid, price = parts[part] if part else (None, 0)
+            c.execute("INSERT INTO records(booking_id,work_done,part_id,qty,cost,done_on) VALUES(?,?,?,?,?,?)",
+                      (bid, work, pid, qty, price * qty + labour, date + " 04:00:00"))
+
+    def order(part, qty, sup, cost, date):
+        c.execute("INSERT INTO orders(part_id,qty,supplier,unit_cost,status,ordered_on) VALUES(?,?,?,?,'Received',?)",
+                  (parts[part][0], qty, sup, cost, date + " 04:00:00"))
+
+    # ---- history: previous 13 months, business slowly growing ----
+    cars = [("user123", "WXY 1234", "Perodua Myvi"), ("faiz", "VDE 5521", "Proton Saga"), ("siti", "PQR 8890", "Honda City"),
+            ("weiming", "JKL 3302", "Toyota Vios"), ("faiz", "BMA 7712", "Mazda CX-5"), ("weiming", "KLM 4410", "Toyota Corolla Cross"),
+            ("siti", "RTY 2288", "Perodua Axia"), ("user123", "PBH 6677", "Honda Civic"), ("faiz", "WQA 1190", "Proton X50"),
+            ("siti", "VCC 3045", "Toyota Hilux")]
+    pool = ["Oil Change"] * 5 + ["Brake Service"] * 3 + ["Battery Replacement"] * 2 + ["Aircond Service"] * 2 + ["Tyre Replacement"] + ["General Inspection"] * 2
+    work = {"Oil Change": "Changed engine oil and filter", "Brake Service": "Replaced brake pads", "Battery Replacement": "Replaced car battery",
+            "Aircond Service": "Aircond cleaning and gas top-up", "Tyre Replacement": "Replaced tyres and alignment", "General Inspection": "Full inspection, no major issues"}
+    part_for = {"Oil Change": "Engine Oil 4L", "Brake Service": "Brake Pad Set", "Battery Replacement": "Car Battery"}
+    labour = {"Oil Change": (40, 60), "Brake Service": (80, 100), "Battery Replacement": (30, 40),
+              "Aircond Service": (150, 200), "Tyre Replacement": (300, 450), "General Inspection": (60, 80)}
+    stock_orders = [("Engine Oil 4L", 6, "Hoklol Auto", 70), ("Brake Pad Set", 4, "AutoParts KL", 95),
+                    ("Oil Filter", 10, "Hoklol Auto", 18), ("Car Battery", 2, "Amaron Supplier", 220)]
+    rng = random.Random(7)
+    for k in range(13, 0, -1):
+        y, m = month_back(now, k)
+        last = calendar.monthrange(y, m)[1]
+        for _ in range(6 + (13 - k) // 2 + rng.randint(0, 3)):
+            owner, plate, car = rng.choice(cars)
+            svc = rng.choice(pool)
+            date = "%04d-%02d-%02d" % (y, m, rng.randint(1, last))
+            if rng.random() < 0.07:
+                add(owner, plate, car, svc, date, "Rejected")
+            else:
+                part = part_for.get(svc)
+                qty = (2 if svc == "Oil Change" and rng.random() < 0.3 else 1) if part else 0
+                add(owner, plate, car, svc, date, "Completed", work[svc], part, qty, rng.randint(*labour[svc]))
+        for part, qty, sup, cost in rng.sample(stock_orders, 2):
+            order(part, qty, sup, cost, "%04d-%02d-%02d" % (y, m, rng.randint(1, last)))
+
+    # ---- recent weeks (shows in the daily view) ----
+    recent = [
         ("user123", "WXY 1234", "Perodua Myvi", "Oil Change", 13, "Completed", "Changed engine oil and oil filter", "Engine Oil 4L", 1, 40),
         ("faiz", "VDE 5521", "Proton Saga", "Brake Service", 12, "Completed", "Replaced front brake pads", "Brake Pad Set", 1, 80),
         ("siti", "PQR 8890", "Honda City", "Oil Change", 11, "Completed", "Changed engine oil", "Engine Oil 4L", 1, 40),
@@ -44,23 +93,16 @@ def seed_demo(c):
         ("weiming", "JKL 3302", "Toyota Corolla Cross", "Brake Service", 3, "Completed", "Replaced front brake pads", "Brake Pad Set", 1, 90),
         ("siti", "PQR 8890", "Honda City", "Battery Replacement", 2, "Completed", "Replaced car battery", "Car Battery", 1, 30),
         ("siti", "PQR 8890", "Honda City", "Oil Change", 1, "Completed", "Changed oil filter", "Oil Filter", 1, 40),
-        ("user123", "WXY 1234", "Perodua Myvi", "Aircond Service", 0, "Approved", None, None, 0, 0),
-        ("faiz", "BMA 7712", "Mazda CX-5", "Brake Service", -1, "Pending", None, None, 0, 0),
-        ("weiming", "JKL 3302", "Toyota Vios", "Oil Change", -2, "Pending", None, None, 0, 0),
-        ("siti", "ABC 9001", "Proton X50", "General Inspection", -3, "Rejected", None, None, 0, 0),
+        ("user123", "WXY 1234", "Perodua Myvi", "Aircond Service", 0, "Approved"),
+        ("faiz", "BMA 7712", "Mazda CX-5", "Brake Service", -1, "Pending"),
+        ("weiming", "JKL 3302", "Toyota Vios", "Oil Change", -2, "Pending"),
+        ("siti", "ABC 9001", "Proton X50", "General Inspection", -3, "Rejected"),
     ]
-    for u, plate, car, svc, ago, status, work, part, qty, labour in demo:
-        bid = c.execute("INSERT INTO bookings(user_id,plate,model,service,date,notes,status) VALUES(?,?,?,?,?,?,?)",
-                        (uid[u], plate, car, svc, day(ago), "", status)).lastrowid
-        if status == "Completed":
-            pid, price = parts[part] if part else (None, 0)
-            c.execute("INSERT INTO records(booking_id,work_done,part_id,qty,cost,done_on) VALUES(?,?,?,?,?,?)",
-                      (bid, work, pid, qty, price * qty + labour, day(ago) + " 04:00:00"))
-    # (part, qty, supplier, unit cost, days ago)
+    for u, plate, car, svc, ago, status, *rest in recent:
+        add(u, plate, car, svc, day(ago), status, *rest)
     for part, qty, sup, cost, ago in [("Engine Oil 4L", 10, "Hoklol Auto", 70, 12), ("Brake Pad Set", 5, "AutoParts KL", 95, 9),
                                       ("Oil Filter", 10, "Hoklol Auto", 18, 6), ("Car Battery", 2, "Amaron Supplier", 220, 3)]:
-        c.execute("INSERT INTO orders(part_id,qty,supplier,unit_cost,status,ordered_on) VALUES(?,?,?,?,'Received',?)",
-                  (parts[part][0], qty, sup, cost, day(ago) + " 04:00:00"))
+        order(part, qty, sup, cost, day(ago))
     for name, stock in [("Engine Oil 4L", 18), ("Brake Pad Set", 6), ("Oil Filter", 4), ("Car Battery", 4)]:
         c.execute("UPDATE parts SET stock=? WHERE name=?", (stock, name))
 
@@ -208,18 +250,33 @@ def reports():
     one = lambda sql: db().execute(sql).fetchone()[0]
     TZ = "'+8 hours'"  # Malaysia time
     BRAND = "substr(b.model,1,instr(b.model||' ',' ')-1)"
+    now = datetime.utcnow() + timedelta(hours=8)
+    zero = {"services": 0, "revenue": 0.0, "spend": 0.0}
 
-    # daily figures: cars serviced, revenue (completed repairs), money spent (part orders)
+    # per-day figures: cars serviced + revenue (completed repairs), money spent (part orders)
     daily = {}
-    def day(d):
-        return daily.setdefault(d, {"services": 0, "revenue": 0.0, "spend": 0.0})
     for r in rows(f"SELECT substr(datetime(done_on,{TZ}),1,10), COUNT(*), SUM(cost) FROM records GROUP BY 1"):
-        x = day(r[0]); x["services"] = r[1]; x["revenue"] = r[2] or 0
+        x = daily.setdefault(r[0], dict(zero)); x["services"] = r[1]; x["revenue"] = r[2] or 0
     for r in rows(f"SELECT substr(datetime(ordered_on,{TZ}),1,10), SUM(qty*COALESCE(unit_cost,0)) FROM orders GROUP BY 1"):
-        day(r[0])["spend"] = r[1] or 0
-    days = sorted(daily)[-31:]
-    daily_rows = [dict(date=d, net=daily[d]["revenue"] - daily[d]["spend"], **daily[d]) for d in reversed(days)]
-    today = daily.get(one(f"SELECT date('now',{TZ})"), {"services": 0, "revenue": 0, "spend": 0})
+        daily.setdefault(r[0], dict(zero))["spend"] = r[1] or 0
+
+    def roll(n):  # group days into months (n=7) or years (n=4)
+        out = {}
+        for k, v in daily.items():
+            o = out.setdefault(k[:n], dict(zero))
+            for f in zero:
+                o[f] += v[f]
+        return out
+    def pack(keys, src):
+        g = lambda f: [round(src.get(k, zero)[f], 2) for k in keys]
+        return {"labels": keys, "services": g("services"), "revenue": g("revenue"), "spend": g("spend")}
+    monthly, yearly = roll(7), roll(4)
+    dkeys = [(now - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(29, -1, -1)]
+    mkeys = ["%04d-%02d" % month_back(now, k) for k in range(11, -1, -1)]
+    first_year = min([int(k) for k in yearly] or [now.year])
+    ykeys = [str(y) for y in range(first_year, now.year + 1)]
+    periods = {"daily": pack(dkeys, daily), "monthly": pack(mkeys, monthly), "yearly": pack(ykeys, yearly)}
+    today = daily.get(now.strftime("%Y-%m-%d"), zero)
 
     st = rows("SELECT status, COUNT(*) FROM bookings GROUP BY status")
     mo = rows("SELECT substr(date,1,7) m, COUNT(*) FROM bookings GROUP BY m ORDER BY m")
@@ -231,8 +288,7 @@ def reports():
     tm = rows("SELECT model, COUNT(*) n FROM bookings GROUP BY model ORDER BY n DESC LIMIT 10")
     L = lambda rs, i: [r[i] for r in rs]
     d = {
-        "daily": {"labels": days, "services": [daily[x]["services"] for x in days],
-                  "revenue": [daily[x]["revenue"] for x in days], "spend": [daily[x]["spend"] for x in days]},
+        "periods": periods,
         "status": {"labels": L(st, 0), "values": L(st, 1)},
         "month": {"labels": L(mo, 0), "values": L(mo, 1)},
         "services": {"labels": L(sv, 0), "values": L(sv, 1)},
@@ -253,7 +309,7 @@ def reports():
         "low": one("SELECT COUNT(*) FROM parts WHERE stock<=reorder_level"),
         "today": today,
     }
-    return render_template("reports.html", d=d, kpi=kpi, daily_rows=daily_rows)
+    return render_template("reports.html", d=d, kpi=kpi)
 
 # ---------- Admin: inventory & part orders ----------
 @app.route("/admin/inventory")
