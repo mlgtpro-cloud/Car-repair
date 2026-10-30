@@ -170,6 +170,7 @@ def receive_order(i):
         db().execute("UPDATE orders SET status='Received' WHERE id=?", (i,)); db().commit()
     return redirect(url_for("inventory"))
 
-if __name__ == "__main__":
-    init_db()
-    app.run(debug=True)
+   init_db()
+
+   if __name__ == "__main__":
+       app.run(debug=True)
