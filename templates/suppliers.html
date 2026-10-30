@@ -1,0 +1,17 @@
+{% extends "base.html" %}{% block body %}
+<div class="card"><h2>Suppliers</h2>
+<table>
+<tr><th>Supplier name</th><th>Phone</th><th style="width:170px"></th></tr>
+{% for s in suppliers %}<tr>
+<td><input form="e{{ s.id }}" name="name" value="{{ s.name }}" required></td>
+<td><input form="e{{ s.id }}" name="phone" value="{{ s.phone or '' }}"></td>
+<td><form id="e{{ s.id }}" class="inline" method="post" action="/admin/suppliers/{{ s.id }}/edit"><button class="g">Save</button></form>
+<form class="inline" method="post" action="/admin/suppliers/{{ s.id }}/delete" onsubmit="return confirm('Delete this supplier?')"><button class="r">Delete</button></form></td>
+</tr>
+{% else %}<tr><td colspan="3">No suppliers yet.</td></tr>{% endfor %}
+</table>
+<h3>Add Supplier</h3>
+<form method="post" action="/admin/suppliers/add"><div class="row">
+<input name="name" placeholder="Supplier name" required><input name="phone" placeholder="Phone (optional)"><button>Add Supplier</button></div></form>
+<p><small>Renaming a supplier also updates it in the order history. Deleting one keeps the old orders.</small></p></div>
+{% endblock %}
