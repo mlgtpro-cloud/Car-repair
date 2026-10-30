@@ -1,42 +1,45 @@
-
 import sqlite3
 from functools import wraps
 from flask import Flask, render_template, request, redirect, url_for, session, flash, g
 from werkzeug.security import generate_password_hash, check_password_hash
- 
+
 app = Flask(__name__)
 app.secret_key = "change-this-secret"
 DB = "garage.db"
- 
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY, name TEXT, username TEXT UNIQUE, password TEXT, role TEXT DEFAULT 'customer');
 CREATE TABLE IF NOT EXISTS bookings(id INTEGER PRIMARY KEY, user_id INTEGER, plate TEXT, model TEXT, service TEXT, date TEXT, notes TEXT, status TEXT DEFAULT 'Pending');
 CREATE TABLE IF NOT EXISTS records(id INTEGER PRIMARY KEY, booking_id INTEGER, work_done TEXT, part_id INTEGER, qty INTEGER, cost REAL, done_on TEXT DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS parts(id INTEGER PRIMARY KEY, name TEXT UNIQUE, stock INTEGER, reorder_level INTEGER, price REAL);
-CREATE TABLE IF NOT EXISTS orders(id INTEGER PRIMARY KEY, part_id INTEGER, qty INTEGER, supplier TEXT, status TEXT DEFAULT 'Ordered', ordered_on TEXT DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE IF NOT EXISTS orders(id INTEGER PRIMARY KEY, part_id INTEGER, qty INTEGER, supplier TEXT, unit_cost REAL DEFAULT 0, status TEXT DEFAULT 'Ordered', ordered_on TEXT DEFAULT CURRENT_TIMESTAMP);
 """
 SERVICES = ["Oil Change", "Brake Service", "Tyre Replacement", "Battery Replacement", "Aircond Service", "General Inspection"]
- 
+
 def init_db():
     c = sqlite3.connect(DB)
     c.executescript(SCHEMA)
+    try:
+        c.execute("ALTER TABLE orders ADD COLUMN unit_cost REAL DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
     if not c.execute("SELECT 1 FROM users WHERE role='admin'").fetchone():
         c.execute("INSERT INTO users(name,username,password,role) VALUES('Admin','admin',?,'admin')",
                   (generate_password_hash("admin123"),))
         c.executemany("INSERT INTO parts(name,stock,reorder_level,price) VALUES(?,?,?,?)",
                       [("Engine Oil 4L", 20, 5, 85), ("Brake Pad Set", 8, 4, 120), ("Oil Filter", 3, 5, 25), ("Car Battery", 6, 3, 280)])
     c.commit(); c.close()
- 
+
 def db():
     if "db" not in g:
         g.db = sqlite3.connect(DB); g.db.row_factory = sqlite3.Row
     return g.db
- 
+
 @app.teardown_appcontext
 def close_db(_):
     d = g.pop("db", None)
     if d: d.close()
- 
+
 def login_required(role):
     def deco(f):
         @wraps(f)
@@ -46,13 +49,13 @@ def login_required(role):
             return f(*a, **k)
         return w
     return deco
- 
+
 @app.route("/")
 def index():
     if session.get("role") == "admin": return redirect(url_for("admin"))
     if session.get("role") == "customer": return redirect(url_for("my_bookings"))
     return redirect(url_for("login"))
- 
+
 @app.route("/register", methods=["GET", "POST"])
 def register():
     if request.method == "POST":
@@ -64,7 +67,7 @@ def register():
         except sqlite3.IntegrityError:
             flash("Username already taken.")
     return render_template("register.html")
- 
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
@@ -73,11 +76,11 @@ def login():
             session.update(uid=u["id"], name=u["name"], role=u["role"]); return redirect(url_for("index"))
         flash("Invalid username or password.")
     return render_template("login.html")
- 
+
 @app.route("/logout")
 def logout():
     session.clear(); return redirect(url_for("login"))
- 
+
 # ---------- Customer ----------
 @app.route("/my", methods=["GET", "POST"])
 @login_required("customer")
@@ -90,7 +93,7 @@ def my_bookings():
         return redirect(url_for("my_bookings"))
     rows = db().execute("SELECT * FROM bookings WHERE user_id=? ORDER BY id DESC", (session["uid"],)).fetchall()
     return render_template("customer.html", bookings=rows, services=SERVICES)
- 
+
 # ---------- Admin: bookings & service records ----------
 @app.route("/admin")
 @login_required("admin")
@@ -98,7 +101,7 @@ def admin():
     rows = db().execute("SELECT b.*, u.name AS customer FROM bookings b JOIN users u ON u.id=b.user_id ORDER BY b.id DESC").fetchall()
     parts = db().execute("SELECT * FROM parts ORDER BY name").fetchall()
     return render_template("admin.html", bookings=rows, parts=parts)
- 
+
 @app.post("/admin/booking/<int:i>/<action>")
 @login_required("admin")
 def booking_action(i, action):
@@ -106,7 +109,7 @@ def booking_action(i, action):
     if status:
         db().execute("UPDATE bookings SET status=? WHERE id=?", (status, i)); db().commit()
     return redirect(url_for("admin"))
- 
+
 @app.route("/admin/booking/<int:i>")
 @login_required("admin")
 def booking_detail(i):
@@ -116,7 +119,7 @@ def booking_detail(i):
     parts = db().execute("SELECT * FROM parts ORDER BY name").fetchall()
     rec = db().execute("SELECT r.*, p.name AS part FROM records r LEFT JOIN parts p ON p.id=r.part_id WHERE r.booking_id=?", (i,)).fetchone()
     return render_template("booking.html", b=b, parts=parts, rec=rec)
- 
+
 @app.post("/admin/booking/<int:i>/complete")
 @login_required("admin")
 def complete(i):
@@ -139,7 +142,7 @@ def complete(i):
     db().execute("UPDATE bookings SET status='Completed' WHERE id=?", (i,))
     db().commit(); flash("Repair record saved. Booking completed.")
     return redirect(url_for("booking_detail", i=i))
- 
+
 @app.route("/admin/records")
 @login_required("admin")
 def records():
@@ -147,7 +150,62 @@ def records():
         FROM records r JOIN bookings b ON b.id=r.booking_id JOIN users u ON u.id=b.user_id
         LEFT JOIN parts p ON p.id=r.part_id ORDER BY r.id DESC""").fetchall()
     return render_template("records.html", records=rows)
- 
+
+@app.route("/admin/reports")
+@login_required("admin")
+def reports():
+    def rows(sql):
+        return db().execute(sql).fetchall()
+    one = lambda sql: db().execute(sql).fetchone()[0]
+    TZ = "'+8 hours'"  # Malaysia time
+    BRAND = "substr(b.model,1,instr(b.model||' ',' ')-1)"
+
+    # daily figures: cars serviced, revenue (completed repairs), money spent (part orders)
+    daily = {}
+    def day(d):
+        return daily.setdefault(d, {"services": 0, "revenue": 0.0, "spend": 0.0})
+    for r in rows(f"SELECT substr(datetime(done_on,{TZ}),1,10), COUNT(*), SUM(cost) FROM records GROUP BY 1"):
+        x = day(r[0]); x["services"] = r[1]; x["revenue"] = r[2] or 0
+    for r in rows(f"SELECT substr(datetime(ordered_on,{TZ}),1,10), SUM(qty*COALESCE(unit_cost,0)) FROM orders GROUP BY 1"):
+        day(r[0])["spend"] = r[1] or 0
+    days = sorted(daily)[-31:]
+    daily_rows = [dict(date=d, net=daily[d]["revenue"] - daily[d]["spend"], **daily[d]) for d in reversed(days)]
+    today = daily.get(one(f"SELECT date('now',{TZ})"), {"services": 0, "revenue": 0, "spend": 0})
+
+    st = rows("SELECT status, COUNT(*) FROM bookings GROUP BY status")
+    mo = rows("SELECT substr(date,1,7) m, COUNT(*) FROM bookings GROUP BY m ORDER BY m")
+    sv = rows("SELECT service, COUNT(*) n FROM bookings GROUP BY service ORDER BY n DESC")
+    us = rows("SELECT p.name, SUM(r.qty) n FROM records r JOIN parts p ON p.id=r.part_id GROUP BY p.name ORDER BY n DESC LIMIT 5")
+    sk = rows("SELECT name, stock, reorder_level FROM parts ORDER BY name")
+    bb = rows(f"SELECT {BRAND} br, COUNT(*) n FROM bookings b GROUP BY br ORDER BY n DESC")
+    rb = rows(f"SELECT {BRAND} br, ROUND(SUM(r.cost),2) t FROM records r JOIN bookings b ON b.id=r.booking_id GROUP BY br ORDER BY t DESC")
+    tm = rows("SELECT model, COUNT(*) n FROM bookings GROUP BY model ORDER BY n DESC LIMIT 10")
+    L = lambda rs, i: [r[i] for r in rs]
+    d = {
+        "daily": {"labels": days, "services": [daily[x]["services"] for x in days],
+                  "revenue": [daily[x]["revenue"] for x in days], "spend": [daily[x]["spend"] for x in days]},
+        "status": {"labels": L(st, 0), "values": L(st, 1)},
+        "month": {"labels": L(mo, 0), "values": L(mo, 1)},
+        "services": {"labels": L(sv, 0), "values": L(sv, 1)},
+        "parts": {"labels": L(us, 0), "values": L(us, 1)},
+        "stock": {"labels": L(sk, 0), "stock": L(sk, 1), "reorder": L(sk, 2)},
+        "brand": {"labels": L(bb, 0), "values": L(bb, 1)},
+        "brandrev": {"labels": L(rb, 0), "values": L(rb, 1)},
+        "model": {"labels": L(tm, 0), "values": L(tm, 1)},
+    }
+    completed = one("SELECT COUNT(*) FROM bookings WHERE status='Completed'")
+    revenue = one("SELECT COALESCE(SUM(cost),0) FROM records")
+    spend = one("SELECT COALESCE(SUM(qty*COALESCE(unit_cost,0)),0) FROM orders")
+    kpi = {
+        "total": one("SELECT COUNT(*) FROM bookings"),
+        "pending": one("SELECT COUNT(*) FROM bookings WHERE status='Pending'"),
+        "completed": completed, "revenue": revenue, "spend": spend, "net": revenue - spend,
+        "avg": revenue / completed if completed else 0,
+        "low": one("SELECT COUNT(*) FROM parts WHERE stock<=reorder_level"),
+        "today": today,
+    }
+    return render_template("reports.html", d=d, kpi=kpi, daily_rows=daily_rows)
+
 # ---------- Admin: inventory & part orders ----------
 @app.route("/admin/inventory")
 @login_required("admin")
@@ -155,7 +213,7 @@ def inventory():
     parts = db().execute("SELECT * FROM parts ORDER BY name").fetchall()
     orders = db().execute("SELECT o.*, p.name FROM orders o JOIN parts p ON p.id=o.part_id ORDER BY o.id DESC").fetchall()
     return render_template("inventory.html", parts=parts, orders=orders)
- 
+
 @app.post("/admin/inventory/add")
 @login_required("admin")
 def add_part():
@@ -167,15 +225,15 @@ def add_part():
     except sqlite3.IntegrityError:
         flash("Part already exists.")
     return redirect(url_for("inventory"))
- 
+
 @app.post("/admin/order")
 @login_required("admin")
 def submit_order():
     f = request.form
-    db().execute("INSERT INTO orders(part_id,qty,supplier) VALUES(?,?,?)", (f["part_id"], int(f["qty"]), f["supplier"]))
+    db().execute("INSERT INTO orders(part_id,qty,supplier,unit_cost) VALUES(?,?,?,?)", (f["part_id"], int(f["qty"]), f["supplier"], float(f.get("unit_cost") or 0)))
     db().commit(); flash("Part order submitted.")
     return redirect(url_for("inventory"))
- 
+
 @app.post("/admin/order/<int:i>/receive")
 @login_required("admin")
 def receive_order(i):
@@ -184,8 +242,8 @@ def receive_order(i):
         db().execute("UPDATE parts SET stock=stock+? WHERE id=?", (o["qty"], o["part_id"]))
         db().execute("UPDATE orders SET status='Received' WHERE id=?", (i,)); db().commit()
     return redirect(url_for("inventory"))
- 
+
 init_db()
- 
+
 if __name__ == "__main__":
     app.run(debug=True)
