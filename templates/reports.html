@@ -6,6 +6,7 @@
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(380px,1fr));gap:20px}
 .chart{position:relative;height:280px}.wide{grid-column:1/-1}
 .pos{color:#16a34a}.neg{color:#dc2626}
+#seg{margin:6px 0 10px}#seg button{background:#e5e7eb;color:#222;margin-right:6px}#seg button.on{background:#2563eb;color:#fff}
 @media print{nav,button{display:none}}
 </style>
 <h2>Reports &amp; Analysis <button onclick="window.print()" style="float:right">Print / Save PDF</button></h2>
@@ -28,12 +29,10 @@
 </div>
 
 <div class="grid">
-<div class="card wide"><h3>Daily: Cars Serviced, Revenue &amp; Money Spent</h3><div class="chart"><canvas id="c0"></canvas></div></div>
-<div class="card wide"><h3>Daily Report (latest 31 days)</h3><table>
-<tr><th>Date</th><th>Cars serviced</th><th>Revenue (RM)</th><th>Money spent (RM)</th><th>Net (RM)</th></tr>
-{% for r in daily_rows %}<tr><td>{{ r.date }}</td><td>{{ r.services }}</td><td>{{ '%.2f'|format(r.revenue) }}</td><td>{{ '%.2f'|format(r.spend) }}</td>
-<td class="{{ 'pos' if r.net>=0 else 'neg' }}">{{ '%.2f'|format(r.net) }}</td></tr>
-{% else %}<tr><td colspan="5">No data yet.</td></tr>{% endfor %}</table></div>
+<div class="card wide"><h3 id="ptitle"></h3>
+<div id="seg"><button data-p="daily">Daily</button><button data-p="monthly">Monthly</button><button data-p="yearly">Yearly</button></div>
+<div class="chart"><canvas id="c0"></canvas></div></div>
+<div class="card wide"><h3 id="ttitle"></h3><table id="ptable"></table></div>
 
 <div class="card"><h3>Bookings by Car Brand</h3><div class="chart"><canvas id="c7"></canvas></div></div>
 <div class="card"><h3>Revenue by Car Brand (RM)</h3><div class="chart"><canvas id="c8"></canvas></div></div>
@@ -51,11 +50,33 @@ const col = {Pending:"#f59e0b",Approved:"#3b82f6",Completed:"#16a34a",Rejected:"
 const opt = {responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{precision:0}}}};
 const optH = {responsive:true,maintainAspectRatio:false,indexAxis:"y",plugins:{legend:{display:false}},scales:{x:{beginAtZero:true,ticks:{precision:0}}}};
 const bar = (id,l,v,c,o)=>new Chart(document.getElementById(id),{type:"bar",data:{labels:l,datasets:[{data:v,backgroundColor:c}]},options:o||opt});
-new Chart(c0,{type:"bar",data:{labels:D.daily.labels,datasets:[
- {type:"bar",label:"Revenue (RM)",data:D.daily.revenue,backgroundColor:"#16a34a",yAxisID:"y"},
- {type:"bar",label:"Money spent (RM)",data:D.daily.spend,backgroundColor:"#dc2626",yAxisID:"y"},
- {type:"line",label:"Cars serviced",data:D.daily.services,borderColor:"#3b82f6",backgroundColor:"#3b82f6",yAxisID:"y1",tension:.3}]},
+const main = new Chart(c0,{type:"bar",data:{labels:[],datasets:[
+ {type:"bar",label:"Revenue (RM)",data:[],backgroundColor:"#16a34a",yAxisID:"y"},
+ {type:"bar",label:"Money spent (RM)",data:[],backgroundColor:"#dc2626",yAxisID:"y"},
+ {type:"line",label:"Cars serviced",data:[],borderColor:"#3b82f6",backgroundColor:"#3b82f6",yAxisID:"y1",tension:.3}]},
  options:{responsive:true,maintainAspectRatio:false,scales:{y:{beginAtZero:true,title:{display:true,text:"RM"}},y1:{beginAtZero:true,position:"right",grid:{drawOnChartArea:false},ticks:{precision:0},title:{display:true,text:"Cars"}}}}});
+const NAMES = {daily:"Daily (last 30 days)", monthly:"Monthly (last 12 months)", yearly:"Yearly"};
+const HEAD = {daily:"Date", monthly:"Month", yearly:"Year"};
+function show(p){
+  const x = D.periods[p];
+  document.querySelectorAll("#seg button").forEach(b => b.classList.toggle("on", b.dataset.p === p));
+  document.getElementById("ptitle").textContent = NAMES[p] + ": Cars Serviced, Revenue & Money Spent";
+  document.getElementById("ttitle").textContent = NAMES[p] + " Report";
+  main.data.labels = x.labels;
+  main.data.datasets[0].data = x.revenue;
+  main.data.datasets[1].data = x.spend;
+  main.data.datasets[2].data = x.services;
+  main.update();
+  let h = "<tr><th>" + HEAD[p] + "</th><th>Cars serviced</th><th>Revenue (RM)</th><th>Money spent (RM)</th><th>Net (RM)</th></tr>";
+  for (let i = x.labels.length - 1; i >= 0; i--) {
+    const net = x.revenue[i] - x.spend[i];
+    h += "<tr><td>" + x.labels[i] + "</td><td>" + x.services[i] + "</td><td>" + x.revenue[i].toFixed(2) + "</td><td>" + x.spend[i].toFixed(2) +
+         '</td><td class="' + (net >= 0 ? "pos" : "neg") + '">' + net.toFixed(2) + "</td></tr>";
+  }
+  document.getElementById("ptable").innerHTML = h;
+}
+document.querySelectorAll("#seg button").forEach(b => b.addEventListener("click", () => show(b.dataset.p)));
+show("monthly");
 bar("c7",D.brand.labels,D.brand.values,"#3b82f6");
 bar("c8",D.brandrev.labels,D.brandrev.values,"#16a34a");
 bar("c9",D.model.labels,D.model.values,"#8b5cf6",optH);
