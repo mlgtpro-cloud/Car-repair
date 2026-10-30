@@ -1,0 +1,18 @@
+{% extends "base.html" %}{% block body %}
+<div class="card"><h2>Stock Balance</h2><table>
+<tr><th>Part</th><th>Stock</th><th>Reorder Level</th><th>Price (RM)</th><th></th></tr>
+{% for p in parts %}<tr><td>{{ p.name }}</td><td class="{{ 'low' if p.stock<=p.reorder_level }}">{{ p.stock }}</td><td>{{ p.reorder_level }}</td>
+<td>{{ '%.2f'|format(p.price) }}</td><td>{% if p.stock<=p.reorder_level %}<span class="tag Rejected">Low stock</span>{% endif %}</td></tr>{% endfor %}</table>
+<h3>Add New Part</h3><form method="post" action="/admin/inventory/add"><div class="row">
+<input name="name" placeholder="Part name" required><input name="stock" type="number" placeholder="Stock" required>
+<input name="reorder_level" type="number" placeholder="Reorder level" required><input name="price" type="number" step="0.01" placeholder="Price" required>
+<button>Add</button></div></form></div>
+<div class="card"><h2>Submit Part Order</h2><form method="post" action="/admin/order"><div class="row">
+<select name="part_id">{% for p in parts %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}</select>
+<input name="qty" type="number" min="1" placeholder="Quantity" required><input name="supplier" placeholder="Supplier" required>
+<button>Submit Order</button></div></form>
+<h3>Order History</h3><table><tr><th>#</th><th>Part</th><th>Qty</th><th>Supplier</th><th>Date</th><th>Status</th><th></th></tr>
+{% for o in orders %}<tr><td>{{ o.id }}</td><td>{{ o.name }}</td><td>{{ o.qty }}</td><td>{{ o.supplier }}</td><td>{{ o.ordered_on[:10] }}</td>
+<td><span class="tag {{ 'Completed' if o.status=='Received' else 'Pending' }}">{{ o.status }}</span></td>
+<td>{% if o.status=='Ordered' %}<form method="post" action="/admin/order/{{ o.id }}/receive"><button class="g">Mark Received</button></form>{% endif %}</td></tr>
+{% else %}<tr><td colspan="7">No orders yet.</td></tr>{% endfor %}</table></div>{% endblock %}

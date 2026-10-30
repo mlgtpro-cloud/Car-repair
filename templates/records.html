@@ -1,0 +1,6 @@
+{% extends "base.html" %}{% block body %}
+<div class="card"><h2>Service Records</h2><table>
+<tr><th>Date</th><th>Customer</th><th>Plate / Car</th><th>Service</th><th>Work Done</th><th>Part Used</th><th>Cost (RM)</th></tr>
+{% for r in records %}<tr><td>{{ r.done_on[:10] }}</td><td>{{ r.customer }}</td><td>{{ r.plate }} / {{ r.model }}</td><td>{{ r.service }}</td>
+<td>{{ r.work_done }}</td><td>{% if r.part %}{{ r.part }} x{{ r.qty }}{% else %}-{% endif %}</td><td>{{ '%.2f'|format(r.cost) }}</td></tr>
+{% else %}<tr><td colspan="7">No service records yet.</td></tr>{% endfor %}</table></div>{% endblock %}

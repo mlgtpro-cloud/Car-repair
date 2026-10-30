@@ -1,0 +1,19 @@
+{% extends "base.html" %}{% block body %}
+<div class="card"><h2>All Car Bookings</h2><table>
+<tr><th>#</th><th>Customer</th><th>Plate / Car</th><th>Service</th><th>Date</th><th>Notes</th><th>Status</th><th>Action</th></tr>
+{% for b in bookings %}<tr><td>{{ b.id }}</td><td>{{ b.customer }}</td><td>{{ b.plate }}<br><small>{{ b.model }}</small></td>
+<td>{{ b.service }}</td><td>{{ b.date }}</td><td>{{ b.notes }}</td><td><span class="tag {{ b.status }}">{{ b.status }}</span></td>
+<td>{% if b.status=='Pending' %}
+<form class="inline" method="post" action="/admin/booking/{{ b.id }}/approve"><button class="g">Approve</button></form>
+<form class="inline" method="post" action="/admin/booking/{{ b.id }}/reject"><button class="r">Reject</button></form>
+{% elif b.status=='Approved' %}
+<form method="post" action="/admin/booking/{{ b.id }}/complete" oninput="calc(this)" onchange="calc(this)">
+<input name="work_done" placeholder="Work done" required>
+<select name="part_id"><option value="">No part used</option>{% for p in parts %}<option value="{{ p.id }}" data-price="{{ p.price }}">{{ p.name }} - RM{{ '%.2f'|format(p.price) }} (stock {{ p.stock }})</option>{% endfor %}</select>
+<input name="qty" type="number" min="0" placeholder="Part qty">
+<input name="labour" type="number" step="0.01" min="0" placeholder="Labour fee (RM)" value="0">
+<input name="total" readonly placeholder="Total (RM) = part x qty + labour">
+<button>Complete</button></form>{% endif %}</td></tr>
+{% else %}<tr><td colspan="8">No bookings.</td></tr>{% endfor %}</table></div>
+<script>function calc(f){var o=f.part_id.selectedOptions[0];var p=parseFloat(o.dataset.price||0),q=parseFloat(f.qty.value||0),l=parseFloat(f.labour.value||0);f.total.value="RM "+(p*q+l).toFixed(2);}</script>
+{% endblock %}

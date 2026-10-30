@@ -1,0 +1,26 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AutoCare Garage</title>
+<style>
+body{font-family:system-ui,sans-serif;margin:0;background:#f4f5f7;color:#222}
+nav{background:#1f2937;color:#fff;padding:12px 24px;display:flex;gap:18px;align-items:center}
+nav a{color:#cbd5e1;text-decoration:none}nav a:hover{color:#fff}nav .sp{flex:1}
+main{max-width:1000px;margin:24px auto;padding:0 16px}
+.card{background:#fff;border-radius:8px;padding:18px;margin-bottom:20px;box-shadow:0 1px 3px #0001;overflow-x:auto}
+table{width:100%;border-collapse:collapse}th,td{padding:8px;border-bottom:1px solid #eee;text-align:left;font-size:14px}
+input,select,textarea{padding:7px;margin:4px 0;width:100%;box-sizing:border-box;border:1px solid #ccc;border-radius:5px}
+button{padding:7px 14px;border:0;border-radius:5px;background:#2563eb;color:#fff;cursor:pointer}
+button.g{background:#16a34a}button.r{background:#dc2626}
+.flash{background:#fef3c7;padding:10px;border-radius:5px;margin-bottom:14px}
+.tag{padding:2px 8px;border-radius:10px;font-size:12px;background:#e5e7eb}
+.Pending{background:#fde68a}.Approved{background:#bfdbfe}.Completed{background:#bbf7d0}.Rejected{background:#fecaca}.low{color:#dc2626;font-weight:bold}
+.row{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+form.inline{display:inline}
+</style></head><body>
+<nav><b>🔧 AutoCare Garage</b>
+{% if session.role=='admin' %}<a href="/admin">Bookings</a><a href="/admin/records">Service Records</a><a href="/admin/inventory">Inventory</a>
+{% elif session.role=='customer' %}<a href="/my">My Bookings</a>{% endif %}
+<span class="sp"></span>
+{% if session.role %}<span>{{ session.name }}</span><a href="/logout">Logout</a>{% else %}<a href="/login">Login</a><a href="/register">Register</a>{% endif %}
+</nav><main>
+{% for m in get_flashed_messages() %}<div class="flash">{{ m }}</div>{% endfor %}
+{% block body %}{% endblock %}</main></body></html>
