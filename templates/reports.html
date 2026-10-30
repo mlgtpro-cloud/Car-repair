@@ -1,0 +1,68 @@
+{% extends "base.html" %}{% block body %}
+<style>
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px}
+.kpi{background:#fff;border-radius:8px;padding:14px;box-shadow:0 1px 3px #0001}
+.kpi b{display:block;font-size:22px;margin-top:4px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(380px,1fr));gap:20px}
+.chart{position:relative;height:280px}.wide{grid-column:1/-1}
+.pos{color:#16a34a}.neg{color:#dc2626}
+@media print{nav,button{display:none}}
+</style>
+<h2>Reports &amp; Analysis <button onclick="window.print()" style="float:right">Print / Save PDF</button></h2>
+<h3>Today</h3>
+<div class="kpis">
+<div class="kpi">Cars serviced today<b>{{ kpi.today.services }}</b></div>
+<div class="kpi">Revenue today<b class="pos">RM {{ '%.2f'|format(kpi.today.revenue) }}</b></div>
+<div class="kpi">Money spent today<b class="neg">RM {{ '%.2f'|format(kpi.today.spend) }}</b></div>
+</div>
+<h3>Overall</h3>
+<div class="kpis">
+<div class="kpi">Total bookings<b>{{ kpi.total }}</b></div>
+<div class="kpi">Pending approval<b>{{ kpi.pending }}</b></div>
+<div class="kpi">Completed repairs<b>{{ kpi.completed }}</b></div>
+<div class="kpi">Total revenue<b class="pos">RM {{ '%.2f'|format(kpi.revenue) }}</b></div>
+<div class="kpi">Money spent (part orders)<b class="neg">RM {{ '%.2f'|format(kpi.spend) }}</b></div>
+<div class="kpi">Net (revenue - spent)<b class="{{ 'pos' if kpi.net>=0 else 'neg' }}">RM {{ '%.2f'|format(kpi.net) }}</b></div>
+<div class="kpi">Avg. repair cost<b>RM {{ '%.2f'|format(kpi.avg) }}</b></div>
+<div class="kpi">Low-stock parts<b class="{{ 'neg' if kpi.low else 'pos' }}">{{ kpi.low }}</b></div>
+</div>
+
+<div class="grid">
+<div class="card wide"><h3>Daily: Cars Serviced, Revenue &amp; Money Spent</h3><div class="chart"><canvas id="c0"></canvas></div></div>
+<div class="card wide"><h3>Daily Report (latest 31 days)</h3><table>
+<tr><th>Date</th><th>Cars serviced</th><th>Revenue (RM)</th><th>Money spent (RM)</th><th>Net (RM)</th></tr>
+{% for r in daily_rows %}<tr><td>{{ r.date }}</td><td>{{ r.services }}</td><td>{{ '%.2f'|format(r.revenue) }}</td><td>{{ '%.2f'|format(r.spend) }}</td>
+<td class="{{ 'pos' if r.net>=0 else 'neg' }}">{{ '%.2f'|format(r.net) }}</td></tr>
+{% else %}<tr><td colspan="5">No data yet.</td></tr>{% endfor %}</table></div>
+
+<div class="card"><h3>Bookings by Car Brand</h3><div class="chart"><canvas id="c7"></canvas></div></div>
+<div class="card"><h3>Revenue by Car Brand (RM)</h3><div class="chart"><canvas id="c8"></canvas></div></div>
+<div class="card wide"><h3>Top 10 Car Models</h3><div class="chart"><canvas id="c9"></canvas></div></div>
+<div class="card"><h3>Bookings by Status</h3><div class="chart"><canvas id="c1"></canvas></div></div>
+<div class="card"><h3>Bookings per Month</h3><div class="chart"><canvas id="c2"></canvas></div></div>
+<div class="card"><h3>Most Requested Services</h3><div class="chart"><canvas id="c4"></canvas></div></div>
+<div class="card"><h3>Top Parts Used</h3><div class="chart"><canvas id="c5"></canvas></div></div>
+<div class="card wide"><h3>Stock vs Reorder Level</h3><div class="chart"><canvas id="c6"></canvas></div></div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+const D = {{ d|tojson }};
+const col = {Pending:"#f59e0b",Approved:"#3b82f6",Completed:"#16a34a",Rejected:"#dc2626"};
+const opt = {responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{precision:0}}}};
+const optH = {responsive:true,maintainAspectRatio:false,indexAxis:"y",plugins:{legend:{display:false}},scales:{x:{beginAtZero:true,ticks:{precision:0}}}};
+const bar = (id,l,v,c,o)=>new Chart(document.getElementById(id),{type:"bar",data:{labels:l,datasets:[{data:v,backgroundColor:c}]},options:o||opt});
+new Chart(c0,{type:"bar",data:{labels:D.daily.labels,datasets:[
+ {type:"bar",label:"Revenue (RM)",data:D.daily.revenue,backgroundColor:"#16a34a",yAxisID:"y"},
+ {type:"bar",label:"Money spent (RM)",data:D.daily.spend,backgroundColor:"#dc2626",yAxisID:"y"},
+ {type:"line",label:"Cars serviced",data:D.daily.services,borderColor:"#3b82f6",backgroundColor:"#3b82f6",yAxisID:"y1",tension:.3}]},
+ options:{responsive:true,maintainAspectRatio:false,scales:{y:{beginAtZero:true,title:{display:true,text:"RM"}},y1:{beginAtZero:true,position:"right",grid:{drawOnChartArea:false},ticks:{precision:0},title:{display:true,text:"Cars"}}}}});
+bar("c7",D.brand.labels,D.brand.values,"#3b82f6");
+bar("c8",D.brandrev.labels,D.brandrev.values,"#16a34a");
+bar("c9",D.model.labels,D.model.values,"#8b5cf6",optH);
+new Chart(c1,{type:"doughnut",data:{labels:D.status.labels,datasets:[{data:D.status.values,backgroundColor:D.status.labels.map(l=>col[l]||"#999")}]},options:{responsive:true,maintainAspectRatio:false}});
+bar("c2",D.month.labels,D.month.values,"#3b82f6");
+bar("c4",D.services.labels,D.services.values,"#8b5cf6",optH);
+bar("c5",D.parts.labels,D.parts.values,"#f59e0b");
+new Chart(c6,{type:"bar",data:{labels:D.stock.labels,datasets:[{label:"Stock",data:D.stock.stock,backgroundColor:"#3b82f6"},{label:"Reorder level",data:D.stock.reorder,backgroundColor:"#dc2626"}]},options:{...opt,plugins:{legend:{display:true}}}});
+</script>
+{% endblock %}
